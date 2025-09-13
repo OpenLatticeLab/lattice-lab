@@ -1,0 +1,29 @@
+{
+  "name": "lattice-lab",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --strictPort"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.13.3",
+    "@emotion/styled": "^11.13.0",
+    "@mui/icons-material": "^6.0.2",
+    "@mui/material": "^6.0.2",
+    "@materialsproject/mp-react-components": "^0.3.17",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.139.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "sass": "^1.77.8",
+    "typescript": "~5.6.2",
+    "vite": "^5.4.2"
+  }
+}
