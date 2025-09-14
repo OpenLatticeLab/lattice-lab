@@ -40,6 +40,26 @@ export async function generateFromPrompt(prompt: string): Promise<SceneResponse>
   return data
 }
 
+export async function exportFile(format: string, body: any): Promise<{ blob: Blob; filename: string; mime: string }> {
+  const res = await fetch(`${API_URL}/api/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ format, ...body }),
+  })
+
+  if (!res.ok) {
+    const msg = await safeError(res)
+    throw new Error(msg || `Export failed (${res.status})`)
+  }
+
+  const cd = res.headers.get('Content-Disposition') || ''
+  const match = /filename\s*=\s*"?([^";]+)"?/i.exec(cd)
+  const filename = match?.[1] || `export.${format === 'poscar' ? 'txt' : format.replace('cif_symm','cif')}`
+  const mime = res.headers.get('Content-Type') || 'application/octet-stream'
+  const blob = await res.blob()
+  return { blob, filename, mime }
+}
+
 async function safeError(res: Response): Promise<string | undefined> {
   try {
     const t = await res.text()
@@ -54,4 +74,3 @@ async function safeError(res: Response): Promise<string | undefined> {
     return undefined
   }
 }
-

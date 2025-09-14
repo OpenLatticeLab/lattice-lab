@@ -19,10 +19,14 @@ import {
   ListItemText,
   Paper,
   Stack,
+  FormGroup,
+  FormControlLabel,
+  Checkbox,
+  Divider,
 } from '@mui/material'
 import { CloudUpload, Send } from '@mui/icons-material'
-import { CrystalToolkitScene } from '@materialsproject/mp-react-components'
-import { generateFromPrompt, uploadCif } from './api'
+import { CrystalToolkitScene, Download } from '@materialsproject/mp-react-components'
+import { generateFromPrompt, uploadCif, exportFile } from './api'
 import type { SceneResponse } from './types'
 
 type Mode = 'prompt' | 'upload'
@@ -36,6 +40,22 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<SceneResponse | null>(null)
+  const [visibility, setVisibility] = useState<Record<string, 0 | 1>>({
+    atoms: 1,
+    bonds: 1,
+    unit_cell: 1,
+    polyhedra: 1,
+    axes: 1,
+  })
+  // For screenshot/download integration with CrystalToolkitScene
+  const [sceneProps, setSceneProps] = useState<any>({
+    imageData: undefined,
+    imageRequest: undefined,
+    imageDataTimestamp: undefined,
+    fileType: '',
+    fileTimestamp: ''
+  })
+  const [downloadData, setDownloadData] = useState<any>(undefined)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -107,6 +127,60 @@ export default function App() {
     if (s && typeof s === 'object' && 'name' in s && 'contents' in s) return s
     return null
   }, [result])
+
+  // When CrystalToolkitScene produces a PNG screenshot, trigger a download
+  useEffect(() => {
+    if (sceneProps?.imageData && sceneProps?.imageDataTimestamp) {
+      setDownloadData({
+        filename: 'crystal',
+        content: sceneProps.imageData,
+        mimeType: 'image/png',
+        isDataURL: true,
+      })
+    }
+  }, [sceneProps?.imageDataTimestamp])
+
+  // When user picks an export option from showExportButton, call backend and download
+  useEffect(() => {
+    const type: string | undefined = sceneProps?.fileType
+    const ts = sceneProps?.fileTimestamp
+    if (!type || !ts) return
+    const map: Record<string, string> = {
+      'CIF (Symmetrized)': 'cif_symm',
+      'CIF': 'cif',
+      'POSCAR': 'poscar',
+      'JSON': 'json',
+      'Prismatic': 'prismatic',
+      'VASP Input Set (MPRelaxSet)': 'mpr',
+    }
+    const fmt = map[type]
+    if (!fmt) return
+    ;(async () => {
+      try {
+        let cifText: string | undefined
+        if (file) {
+          try { cifText = await file.text() } catch {}
+        }
+        const body: any = {}
+        if (cifText) body.cif = cifText
+        else if (result) body.structure = { lattice: result.lattice, formula: result.formula, n_sites: result.n_sites }
+        if (result?.scene) body.scene = result.scene
+        const { blob, filename } = await exportFile(fmt, body)
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        URL.revokeObjectURL(url)
+      } catch (e: any) {
+        console.error('Export failed', e)
+        setError(e?.message || 'Export failed')
+      }
+    })()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneProps?.fileTimestamp])
 
   return (
     <>
@@ -214,7 +288,31 @@ export default function App() {
                 <CardContent>
                   <div className="viewer-container">
                     {sceneData ? (
-                      <CrystalToolkitScene data={sceneData} />
+                      <>
+                        <CrystalToolkitScene
+                          className="ctk-viewer"
+                          data={sceneData}
+                          toggleVisibility={visibility}
+                          sceneSize="100%"
+                          settings={{ renderer: 'webgl', zoomToFit2D: true, extractAxis: true, secondaryObjectView: true }}
+                          axisView="SW"
+                          showPositionButton
+                          showExportButton
+                          fileOptions={[
+                            'CIF (Symmetrized)',
+                            'CIF',
+                            'POSCAR',
+                            'JSON',
+                            'Prismatic',
+                            'VASP Input Set (MPRelaxSet)'
+                          ]}
+                          setProps={(p:any) => setSceneProps((s:any) => ({ ...s, ...p }))}
+                        >
+                          <LayerToggles visibility={visibility} onChange={setVisibility} />
+                        </CrystalToolkitScene>
+                        {/* Triggers a browser download when data is set */}
+                        <Download id="image-download" data={downloadData} />
+                      </>
                     ) : (
                       <Typography color="text.secondary">
                         No scene loaded yet or scene format unsupported.
@@ -280,4 +378,26 @@ function formatBytes(bytes: number): string {
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
+}
+
+type LayerTogglesProps = {
+  visibility: Record<string, 0 | 1>
+  onChange: (v: Record<string, 0 | 1>) => void
+}
+
+function LayerToggles({ visibility, onChange }: LayerTogglesProps) {
+  const set = (k: string, v: boolean) => onChange({ ...visibility, [k]: v ? 1 : 0 })
+  return (
+    <Stack gap={1} sx={{ minWidth: 220 }}>
+      <Typography variant="subtitle2">Hide/show</Typography>
+      <Divider />
+      <FormGroup>
+        <FormControlLabel control={<Checkbox size="small" checked={!!visibility.atoms} onChange={(e) => set('atoms', e.target.checked)} />} label="Atoms" />
+        <FormControlLabel control={<Checkbox size="small" checked={!!visibility.bonds} onChange={(e) => set('bonds', e.target.checked)} />} label="Bonds" />
+        <FormControlLabel control={<Checkbox size="small" checked={!!visibility.unit_cell} onChange={(e) => set('unit_cell', e.target.checked)} />} label="Unit cell" />
+        <FormControlLabel control={<Checkbox size="small" checked={!!visibility.polyhedra} onChange={(e) => set('polyhedra', e.target.checked)} />} label="Polyhedra" />
+        <FormControlLabel control={<Checkbox size="small" checked={!!visibility.axes} onChange={(e) => set('axes', e.target.checked)} />} label="Axes" />
+      </FormGroup>
+    </Stack>
+  )
 }
